@@ -2,7 +2,7 @@ import asyncio
 import discord
 from discord.ext import commands
 
-from config import DISCORD_TOKEN, DEFAULT_WATCHLIST
+from config import DISCORD_TOKEN, DEFAULT_WATCHLIST, ALLOWED_GUILDS
 from database.db import init_db, seed_default_watchlist
 
 COGS = [
@@ -36,9 +36,15 @@ class OilBot(commands.Bot):
         )
 
     async def on_guild_join(self, guild: discord.Guild):
+        if guild.id not in ALLOWED_GUILDS:
+            print(f"Leaving unauthorized guild: {guild.name} ({guild.id})")
+            await guild.leave()
+            return
         await self._sync_guild(guild)
 
     async def _sync_guild(self, guild: discord.Guild):
+        if guild.id not in ALLOWED_GUILDS:
+            return
         await seed_default_watchlist(str(guild.id), DEFAULT_WATCHLIST)
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)

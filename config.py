@@ -5,6 +5,12 @@ load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
+# Whitelisted guild IDs — bot will leave any server not in this list
+ALLOWED_GUILDS = {
+    1402827341431967915,
+    1442280884869922908,
+}
+
 # Pre-loaded oil watchlist
 DEFAULT_WATCHLIST = ["USO", "UCO", "BNO", "XOP", "XLE"]
 
