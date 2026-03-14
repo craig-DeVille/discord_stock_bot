@@ -4,10 +4,14 @@ from discord.ext import commands, tasks
 from datetime import datetime, time
 import pytz
 
-from services.market import get_quotes, format_change, embed_color
+from services.market import get_quotes, format_change
 from database.db import (
-    get_watchlist, get_subscribers,
-    get_scheduler_channel, set_scheduler_channel,
+    get_watchlist,
+    get_scheduler_config,
+    set_scheduler_channel,
+    get_all_scheduler_configs,
+    update_last_intraday_post,
+    set_daily_active,
 )
 from config import (
     MARKET_OPEN_HOUR, MARKET_OPEN_MINUTE,
@@ -17,7 +21,7 @@ from config import (
 
 ET = pytz.timezone(TIMEZONE)
 
-OPEN_TIME = time(hour=MARKET_OPEN_HOUR, minute=MARKET_OPEN_MINUTE, tzinfo=ET)
+OPEN_TIME  = time(hour=MARKET_OPEN_HOUR,  minute=MARKET_OPEN_MINUTE,  tzinfo=ET)
 CLOSE_TIME = time(hour=MARKET_CLOSE_HOUR, minute=MARKET_CLOSE_MINUTE, tzinfo=ET)
 
 
@@ -26,19 +30,29 @@ class Scheduler(commands.Cog):
         self.bot = bot
         self.daily_open.start()
         self.daily_close.start()
+        self.intraday_tick.start()
 
     def cog_unload(self):
         self.daily_open.cancel()
         self.daily_close.cancel()
+        self.intraday_tick.cancel()
 
-    @app_commands.command(name="setchannel", description="Set the channel for scheduled market updates (admin only)")
-    @app_commands.describe(channel="The channel to post daily summaries in")
+    # --- Admin command ---
+
+    @app_commands.command(name="setchannel", description="Set the channel for all market updates (admin only)")
+    @app_commands.guild_only()
+    @app_commands.describe(channel="Channel to post daily summaries, intraday updates, and alerts in")
     @app_commands.checks.has_permissions(administrator=True)
     async def setchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         await set_scheduler_channel(str(interaction.guild_id), str(channel.id))
         await interaction.response.send_message(
-            f"Daily market summaries will be posted in {channel.mention}.", ephemeral=True
+            f"All market updates will be posted in {channel.mention}.\n"
+            f"Daily open/close summaries are on by default. "
+            f"Use `/subscribe` to add intraday updates.",
+            ephemeral=True,
         )
+
+    # --- Scheduled tasks ---
 
     @tasks.loop(time=OPEN_TIME)
     async def daily_open(self):
@@ -50,21 +64,50 @@ class Scheduler(commands.Cog):
         for guild in self.bot.guilds:
             await self._post_summary(guild, label="EOD Oil Report")
 
+    @tasks.loop(minutes=5)
+    async def intraday_tick(self):
+        now = datetime.now(ET)
+        configs = await get_all_scheduler_configs()
+
+        for cfg in configs:
+            if not cfg["daily_active"]:
+                continue
+            if not cfg["intraday_interval_minutes"]:
+                continue
+
+            # Check if enough time has passed since last post
+            last = cfg["last_intraday_post"]
+            if last:
+                try:
+                    last_dt = datetime.fromisoformat(last).astimezone(ET)
+                    elapsed = (now - last_dt).total_seconds() / 60
+                    if elapsed < cfg["intraday_interval_minutes"]:
+                        continue
+                except ValueError:
+                    pass
+
+            guild = self.bot.get_guild(int(cfg["guild_id"]))
+            if not guild:
+                continue
+
+            await self._post_summary(guild, label="Oil Update")
+            await update_last_intraday_post(cfg["guild_id"], now.isoformat())
+
     @daily_open.before_loop
-    async def before_open(self):
+    @daily_close.before_loop
+    @intraday_tick.before_loop
+    async def before_loops(self):
         await self.bot.wait_until_ready()
 
-    @daily_close.before_loop
-    async def before_close(self):
-        await self.bot.wait_until_ready()
+    # --- Shared summary builder ---
 
     async def _post_summary(self, guild: discord.Guild, label: str):
         guild_id = str(guild.id)
-        channel_id = await get_scheduler_channel(guild_id)
-        if not channel_id:
+        config = await get_scheduler_config(guild_id)
+        if not config or not config["daily_active"]:
             return
 
-        channel = self.bot.get_channel(int(channel_id))
+        channel = self.bot.get_channel(int(config["channel_id"]))
         if not channel:
             return
 
@@ -76,7 +119,7 @@ class Scheduler(commands.Cog):
 
         embed = discord.Embed(
             title=f"📈 {label}",
-            description=f"{datetime.now(ET).strftime('%A, %B %d %Y')}",
+            description=datetime.now(ET).strftime("%A, %B %d %Y · %I:%M %p ET"),
             color=0xF39C12,
         )
 
@@ -93,15 +136,6 @@ class Scheduler(commands.Cog):
 
         embed.set_footer(text="Not financial advice.")
         await channel.send(embed=embed)
-
-        # DM subscribers
-        subscribers = await get_subscribers(guild_id)
-        for user_id in subscribers:
-            try:
-                user = await self.bot.fetch_user(int(user_id))
-                await user.send(embed=embed)
-            except discord.Forbidden:
-                pass
 
 
 async def setup(bot: commands.Bot):

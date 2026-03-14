@@ -1,6 +1,6 @@
 # Oil Desk — Discord Stock Bot
 
-A Discord bot for tracking oil ETFs and energy funds in a server. Supports live price lookups, a group watchlist, price floor/ceiling alerts, volatility alerts, and daily market summaries.
+A Discord bot for tracking oil ETFs and energy funds in a server. Posts daily market open/close summaries, optional intraday updates, price alerts, and volatility alerts to a configured channel.
 
 ## Default Watchlist
 
@@ -14,20 +14,45 @@ A Discord bot for tracking oil ETFs and energy funds in a server. Supports live 
 
 ## Commands
 
+### Prices
 | Command | Description |
 |---|---|
 | `/price <symbol>` | Live price for any ticker |
 | `/watchlist` | Show all tracked symbols with prices |
-| `/add <symbol>` | Add a symbol to the group watchlist |
+| `/add <symbol>` | Add a symbol to the group watchlist (max 25) |
 | `/remove <symbol>` | Remove a symbol from the watchlist |
-| `/alert <symbol> [floor] [ceiling]` | DM alert when price breaks a range |
+
+### Alerts
+| Command | Description |
+|---|---|
+| `/alert <symbol> [floor] [ceiling]` | Ping the channel when price breaks a range (max 10 per user) |
 | `/alerts` | List your active alerts |
 | `/alert_remove <id>` | Delete an alert |
-| `/volconfig <symbol> <threshold%>` | Ping channel when symbol moves X%+ in a day |
-| `/subscribe` | Opt in to daily open/close summaries via DM |
-| `/unsubscribe` | Opt out of DM summaries |
-| `/setchannel <channel>` | Set channel for daily updates (admin only) |
+| `/volconfig <symbol> <threshold%>` | Ping channel when symbol moves X%+ in a day (max 25) |
+
+### Scheduled Updates
+| Command | Description |
+|---|---|
+| `/subscribe <interval>` | Add intraday price updates to the channel (15m / 30m / 1h / 2h / 4h) |
+| `/unsubscribe` | Pause all scheduled updates (intraday and daily) |
+
+### Admin
+| Command | Description |
+|---|---|
+| `/setchannel <channel>` | Set the channel for all updates and alerts |
+
+### Help
+| Command | Description |
+|---|---|
 | `/help` | Show all commands |
+
+## How Scheduled Updates Work
+
+- **Daily open summary** posts automatically at 9:35 AM ET on market days
+- **Daily close summary** posts automatically at 4:05 PM ET on market days
+- Both are on by default once `/setchannel` is set
+- `/subscribe` adds optional intraday updates at your chosen interval on top of the daily posts
+- `/unsubscribe` pauses everything — daily and intraday — until you run `/subscribe` again
 
 ## Setup
 
@@ -36,6 +61,7 @@ A Discord bot for tracking oil ETFs and energy funds in a server. Supports live 
 git clone https://github.com/craig-DeVille/discord_stock_bot.git
 cd discord_stock_bot
 pip install -r requirements.txt
+pip install audioop-lts  # required for Python 3.13+
 ```
 
 ### 2. Configure
@@ -49,20 +75,23 @@ cp .env.example .env
 python bot.py
 ```
 
-The bot will sync slash commands to your server automatically on startup.
+### 4. First-time Discord setup
+1. Run `/setchannel #your-channel` in your server — this enables daily open/close posts
+2. Optionally run `/subscribe 1h` to add hourly intraday updates
+3. Run `/volconfig USO 5` to get pinged when USO moves 5%+ in a day
 
 ## Creating a Discord Bot
 
 1. Go to [discord.com/developers/applications](https://discord.com/developers/applications) → New Application
-2. **Bot** tab → Add Bot → Reset Token → copy it into `.env`
+2. **Bot** tab → Add Bot → Reset Token → copy into `.env`
 3. **OAuth2 → URL Generator** → check `bot` + `applications.commands` → copy invite URL → add to your server
 
 ## Stack
 
 - [discord.py 2.x](https://discordpy.readthedocs.io/)
 - [yfinance](https://github.com/ranaroussi/yfinance) — market data, no API key required
-- SQLite — watchlists, alerts, subscriptions
-- Python 3.12+
+- SQLite — watchlist, alerts, vol configs, scheduler config
+- Python 3.13+
 
 ## Disclaimer
 

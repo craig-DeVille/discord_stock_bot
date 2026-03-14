@@ -37,10 +37,11 @@ class Help(commands.Cog):
         )
 
         embed.add_field(
-            name="📬 Subscriptions",
+            name="🕐 Scheduled Updates",
             value=(
-                "`/subscribe` — Get daily open/close summaries via DM\n"
-                "`/unsubscribe` — Stop receiving DM summaries"
+                "`/subscribe <interval>` — Add intraday updates to the channel (15m / 30m / 1h / 2h / 4h)\n"
+                "`/unsubscribe` — Pause all updates (intraday and daily) until you subscribe again\n"
+                "*Daily open (9:35 AM ET) and close (4:05 PM ET) post automatically once `/setchannel` is set*"
             ),
             inline=False,
         )

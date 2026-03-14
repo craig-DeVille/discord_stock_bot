@@ -16,14 +16,6 @@ async def init_db():
                 UNIQUE(guild_id, symbol)
             );
 
-            CREATE TABLE IF NOT EXISTS subscriptions (
-                id INTEGER PRIMARY KEY,
-                user_id TEXT NOT NULL,
-                guild_id TEXT NOT NULL,
-                active INTEGER DEFAULT 1,
-                UNIQUE(user_id, guild_id)
-            );
-
             CREATE TABLE IF NOT EXISTS alerts (
                 id INTEGER PRIMARY KEY,
                 user_id TEXT NOT NULL,
@@ -45,7 +37,10 @@ async def init_db():
 
             CREATE TABLE IF NOT EXISTS scheduler_config (
                 guild_id TEXT PRIMARY KEY,
-                channel_id TEXT NOT NULL
+                channel_id TEXT NOT NULL,
+                daily_active INTEGER DEFAULT 1,
+                intraday_interval_minutes INTEGER DEFAULT NULL,
+                last_intraday_post TEXT DEFAULT NULL
             );
         """)
         await db.commit()
@@ -73,6 +68,15 @@ async def get_watchlist(guild_id: str) -> list[str]:
         return [row[0] for row in rows]
 
 
+async def count_watchlist(guild_id: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM watchlist WHERE guild_id = ?", (guild_id,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
+
 async def add_to_watchlist(guild_id: str, symbol: str, added_by: str) -> bool:
     try:
         async with aiosqlite.connect(DB_PATH) as db:
@@ -83,7 +87,7 @@ async def add_to_watchlist(guild_id: str, symbol: str, added_by: str) -> bool:
             await db.commit()
         return True
     except aiosqlite.IntegrityError:
-        return False  # already exists
+        return False
 
 
 async def remove_from_watchlist(guild_id: str, symbol: str) -> bool:
@@ -96,38 +100,17 @@ async def remove_from_watchlist(guild_id: str, symbol: str) -> bool:
         return cursor.rowcount > 0
 
 
-# --- Subscriptions ---
+# --- Alerts ---
 
-async def subscribe(user_id: str, guild_id: str):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT INTO subscriptions (user_id, guild_id, active) VALUES (?, ?, 1) "
-            "ON CONFLICT(user_id, guild_id) DO UPDATE SET active = 1",
-            (user_id, guild_id),
-        )
-        await db.commit()
-
-
-async def unsubscribe(user_id: str, guild_id: str):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE subscriptions SET active = 0 WHERE user_id = ? AND guild_id = ?",
-            (user_id, guild_id),
-        )
-        await db.commit()
-
-
-async def get_subscribers(guild_id: str) -> list[str]:
+async def count_user_alerts(user_id: str, guild_id: str) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "SELECT user_id FROM subscriptions WHERE guild_id = ? AND active = 1",
-            (guild_id,),
+            "SELECT COUNT(*) FROM alerts WHERE user_id = ? AND guild_id = ? AND triggered = 0",
+            (user_id, guild_id),
         )
-        rows = await cursor.fetchall()
-        return [row[0] for row in rows]
+        row = await cursor.fetchone()
+        return row[0] if row else 0
 
-
-# --- Alerts ---
 
 async def add_alert(user_id: str, guild_id: str, symbol: str, floor: float | None, ceiling: float | None) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
@@ -185,6 +168,15 @@ async def set_vol_config(guild_id: str, symbol: str, threshold_pct: float):
         await db.commit()
 
 
+async def count_vol_configs(guild_id: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM vol_configs WHERE guild_id = ?", (guild_id,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else 0
+
+
 async def get_vol_configs(guild_id: str) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
@@ -206,10 +198,70 @@ async def set_scheduler_channel(guild_id: str, channel_id: str):
         await db.commit()
 
 
-async def get_scheduler_channel(guild_id: str) -> str | None:
+async def get_scheduler_config(guild_id: str) -> dict | None:
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "SELECT channel_id FROM scheduler_config WHERE guild_id = ?", (guild_id,)
+            "SELECT channel_id, daily_active, intraday_interval_minutes, last_intraday_post "
+            "FROM scheduler_config WHERE guild_id = ?",
+            (guild_id,),
         )
         row = await cursor.fetchone()
-        return row[0] if row else None
+        if not row:
+            return None
+        return {
+            "channel_id": row[0],
+            "daily_active": bool(row[1]),
+            "intraday_interval_minutes": row[2],
+            "last_intraday_post": row[3],
+        }
+
+
+async def get_scheduler_channel(guild_id: str) -> str | None:
+    config = await get_scheduler_config(guild_id)
+    return config["channel_id"] if config else None
+
+
+async def set_intraday_interval(guild_id: str, interval_minutes: int | None):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE scheduler_config SET intraday_interval_minutes = ?, daily_active = 1 WHERE guild_id = ?",
+            (interval_minutes, guild_id),
+        )
+        await db.commit()
+
+
+async def set_daily_active(guild_id: str, active: bool):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE scheduler_config SET daily_active = ? WHERE guild_id = ?",
+            (1 if active else 0, guild_id),
+        )
+        await db.commit()
+
+
+async def update_last_intraday_post(guild_id: str, timestamp: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE scheduler_config SET last_intraday_post = ? WHERE guild_id = ?",
+            (timestamp, guild_id),
+        )
+        await db.commit()
+
+
+async def get_all_scheduler_configs() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT guild_id, channel_id, daily_active, intraday_interval_minutes, last_intraday_post "
+            "FROM scheduler_config"
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "guild_id": r[0],
+                "channel_id": r[1],
+                "daily_active": bool(r[2]),
+                "intraday_interval_minutes": r[3],
+                "last_intraday_post": r[4],
+            }
+            for r in rows
+        ]
