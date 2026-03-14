@@ -28,7 +28,7 @@ class Help(commands.Cog):
         embed.add_field(
             name="🔔 Alerts",
             value=(
-                "`/alert <symbol> [floor] [ceiling]` — Alert you via DM when price breaks a range\n"
+                "`/alert <symbol> [floor] [ceiling]` — Ping you in the channel when price breaks a range\n"
                 "`/alerts` — List your active alerts\n"
                 "`/alert_remove <id>` — Delete an alert\n"
                 "`/volconfig <symbol> <threshold%>` — Ping the channel when a symbol moves more than X% in a day"
@@ -37,10 +37,12 @@ class Help(commands.Cog):
         )
 
         embed.add_field(
-            name="📬 Subscriptions",
+            name="🕐 Scheduled Updates",
             value=(
-                "`/subscribe` — Get daily open/close summaries via DM\n"
-                "`/unsubscribe` — Stop receiving DM summaries"
+                "`/subscribe daily` — Enable daily open/close summaries only\n"
+                "`/subscribe <interval>` — Enable intraday updates (15m / 30m / 1h / 2h / 4h) + daily\n"
+                "`/unsubscribe intraday` — Stop intraday updates, keep daily summaries\n"
+                "`/unsubscribe all` — Pause everything until you subscribe again"
             ),
             inline=False,
         )

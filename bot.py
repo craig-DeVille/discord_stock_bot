@@ -24,35 +24,31 @@ class OilBot(commands.Bot):
         await init_db()
         for cog in COGS:
             await self.load_extension(cog)
-        print("Cogs loaded. Type !sync in Discord to register slash commands.")
 
     async def on_ready(self):
         print(f"Logged in as {self.user} ({self.user.id})")
         for guild in self.guilds:
-            await seed_default_watchlist(str(guild.id), DEFAULT_WATCHLIST)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            print(f"Slash commands synced to {guild.name}")
+            await self._sync_guild(guild)
         await self.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching, name="oil prices"
             )
         )
 
+    async def on_guild_join(self, guild: discord.Guild):
+        await self._sync_guild(guild)
 
-bot = OilBot()
-
-
-@bot.command(name="sync")
-@commands.is_owner()
-async def sync(ctx):
-    await bot.tree.sync()
-    await ctx.send("Slash commands synced.")
+    async def _sync_guild(self, guild: discord.Guild):
+        await seed_default_watchlist(str(guild.id), DEFAULT_WATCHLIST)
+        self.tree.copy_global_to(guild=guild)
+        await self.tree.sync(guild=guild)
+        print(f"Synced commands to {guild.name}")
 
 
 async def main():
     if not DISCORD_TOKEN:
         raise ValueError("DISCORD_TOKEN not set in .env")
+    bot = OilBot()
     async with bot:
         await bot.start(DISCORD_TOKEN)
 

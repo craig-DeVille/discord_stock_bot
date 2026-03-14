@@ -3,7 +3,9 @@ from discord import app_commands
 from discord.ext import commands
 
 from services.market import get_quote, get_quotes, format_change, embed_color
-from database.db import get_watchlist, add_to_watchlist, remove_from_watchlist, seed_default_watchlist
+from database.db import get_watchlist, add_to_watchlist, remove_from_watchlist, seed_default_watchlist, count_watchlist
+
+MAX_WATCHLIST = 25
 from config import DEFAULT_WATCHLIST
 
 
@@ -12,8 +14,9 @@ class Prices(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="price", description="Get the current price for a ticker symbol")
+    @app_commands.guild_only()
     @app_commands.describe(symbol="Ticker symbol, e.g. USO, UCO, XLE")
-    async def price(self, interaction: discord.Interaction, symbol: str):
+    async def price(self, interaction: discord.Interaction, symbol: app_commands.Range[str, 1, 10]):
         await interaction.response.defer()
         data = await get_quote(symbol)
 
@@ -43,6 +46,7 @@ class Prices(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="watchlist", description="Show all tracked symbols and their current prices")
+    @app_commands.guild_only()
     async def watchlist(self, interaction: discord.Interaction):
         await interaction.response.defer()
         guild_id = str(interaction.guild_id)
@@ -71,11 +75,20 @@ class Prices(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="add", description="Add a symbol to the group watchlist")
+    @app_commands.guild_only()
     @app_commands.describe(symbol="Ticker symbol to add, e.g. VOO")
-    async def add(self, interaction: discord.Interaction, symbol: str):
+    async def add(self, interaction: discord.Interaction, symbol: app_commands.Range[str, 1, 10]):
         await interaction.response.defer(ephemeral=True)
         symbol = symbol.upper()
         guild_id = str(interaction.guild_id)
+
+        count = await count_watchlist(guild_id)
+        if count >= MAX_WATCHLIST:
+            await interaction.followup.send(
+                f"Watchlist is full ({MAX_WATCHLIST} symbols max). Remove one first with `/remove`.",
+                ephemeral=True,
+            )
+            return
 
         # Validate the symbol exists
         data = await get_quote(symbol)
@@ -90,8 +103,9 @@ class Prices(commands.Cog):
             await interaction.followup.send(f"**{symbol}** is already on the watchlist.", ephemeral=True)
 
     @app_commands.command(name="remove", description="Remove a symbol from the group watchlist")
+    @app_commands.guild_only()
     @app_commands.describe(symbol="Ticker symbol to remove")
-    async def remove(self, interaction: discord.Interaction, symbol: str):
+    async def remove(self, interaction: discord.Interaction, symbol: app_commands.Range[str, 1, 10]):
         await interaction.response.defer(ephemeral=True)
         symbol = symbol.upper()
         guild_id = str(interaction.guild_id)
