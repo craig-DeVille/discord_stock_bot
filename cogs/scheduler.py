@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
-from datetime import datetime, time
+from datetime import datetime, time, date
 import pytz
 
 from services.market import get_quotes, format_change
@@ -20,9 +20,20 @@ from config import (
 )
 
 ET = pytz.timezone(TIMEZONE)
+UTC = pytz.utc
 
-OPEN_TIME  = time(hour=MARKET_OPEN_HOUR,  minute=MARKET_OPEN_MINUTE,  tzinfo=ET)
-CLOSE_TIME = time(hour=MARKET_CLOSE_HOUR, minute=MARKET_CLOSE_MINUTE, tzinfo=ET)
+
+def _et_time_to_utc(hour: int, minute: int) -> time:
+    """Convert a wall-clock ET time to UTC, respecting DST on today's date."""
+    today = date.today()
+    naive = datetime(today.year, today.month, today.day, hour, minute)
+    et_dt = ET.localize(naive)
+    utc_dt = et_dt.astimezone(UTC)
+    return utc_dt.time().replace(tzinfo=UTC)
+
+
+OPEN_TIME  = _et_time_to_utc(MARKET_OPEN_HOUR,  MARKET_OPEN_MINUTE)
+CLOSE_TIME = _et_time_to_utc(MARKET_CLOSE_HOUR, MARKET_CLOSE_MINUTE)
 
 
 class Scheduler(commands.Cog):
