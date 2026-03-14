@@ -83,8 +83,9 @@ async def get_quotes(symbols: list[str]) -> dict[str, Optional[dict]]:
 
 
 def format_change(change_pct: float) -> str:
-    arrow = "▲" if change_pct >= 0 else "▼"
-    return f"{arrow} {abs(change_pct):.2f}%"
+    if change_pct >= 0:
+        return f"🟢 ▲ {abs(change_pct):.2f}%"
+    return f"🔴 ▼ {abs(change_pct):.2f}%"
 
 
 def embed_color(change_pct: float) -> int:
