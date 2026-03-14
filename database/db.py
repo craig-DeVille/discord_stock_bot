@@ -1,0 +1,215 @@
+import aiosqlite
+import os
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "ticker.db")
+
+
+async def init_db():
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executescript("""
+            CREATE TABLE IF NOT EXISTS watchlist (
+                id INTEGER PRIMARY KEY,
+                guild_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                added_by TEXT,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(guild_id, symbol)
+            );
+
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                id INTEGER PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                guild_id TEXT NOT NULL,
+                active INTEGER DEFAULT 1,
+                UNIQUE(user_id, guild_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS alerts (
+                id INTEGER PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                guild_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                floor REAL,
+                ceiling REAL,
+                triggered INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS vol_configs (
+                id INTEGER PRIMARY KEY,
+                guild_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                threshold_pct REAL NOT NULL,
+                UNIQUE(guild_id, symbol)
+            );
+
+            CREATE TABLE IF NOT EXISTS scheduler_config (
+                guild_id TEXT PRIMARY KEY,
+                channel_id TEXT NOT NULL
+            );
+        """)
+        await db.commit()
+
+
+async def seed_default_watchlist(guild_id: str, symbols: list[str]):
+    async with aiosqlite.connect(DB_PATH) as db:
+        for symbol in symbols:
+            await db.execute(
+                "INSERT OR IGNORE INTO watchlist (guild_id, symbol, added_by) VALUES (?, ?, ?)",
+                (guild_id, symbol.upper(), "system"),
+            )
+        await db.commit()
+
+
+# --- Watchlist ---
+
+async def get_watchlist(guild_id: str) -> list[str]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT symbol FROM watchlist WHERE guild_id = ? ORDER BY added_at",
+            (guild_id,),
+        )
+        rows = await cursor.fetchall()
+        return [row[0] for row in rows]
+
+
+async def add_to_watchlist(guild_id: str, symbol: str, added_by: str) -> bool:
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT INTO watchlist (guild_id, symbol, added_by) VALUES (?, ?, ?)",
+                (guild_id, symbol.upper(), added_by),
+            )
+            await db.commit()
+        return True
+    except aiosqlite.IntegrityError:
+        return False  # already exists
+
+
+async def remove_from_watchlist(guild_id: str, symbol: str) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "DELETE FROM watchlist WHERE guild_id = ? AND symbol = ?",
+            (guild_id, symbol.upper()),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+# --- Subscriptions ---
+
+async def subscribe(user_id: str, guild_id: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO subscriptions (user_id, guild_id, active) VALUES (?, ?, 1) "
+            "ON CONFLICT(user_id, guild_id) DO UPDATE SET active = 1",
+            (user_id, guild_id),
+        )
+        await db.commit()
+
+
+async def unsubscribe(user_id: str, guild_id: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE subscriptions SET active = 0 WHERE user_id = ? AND guild_id = ?",
+            (user_id, guild_id),
+        )
+        await db.commit()
+
+
+async def get_subscribers(guild_id: str) -> list[str]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT user_id FROM subscriptions WHERE guild_id = ? AND active = 1",
+            (guild_id,),
+        )
+        rows = await cursor.fetchall()
+        return [row[0] for row in rows]
+
+
+# --- Alerts ---
+
+async def add_alert(user_id: str, guild_id: str, symbol: str, floor: float | None, ceiling: float | None) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "INSERT INTO alerts (user_id, guild_id, symbol, floor, ceiling) VALUES (?, ?, ?, ?, ?)",
+            (user_id, guild_id, symbol.upper(), floor, ceiling),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def get_user_alerts(user_id: str, guild_id: str) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT id, symbol, floor, ceiling FROM alerts WHERE user_id = ? AND guild_id = ? AND triggered = 0",
+            (user_id, guild_id),
+        )
+        rows = await cursor.fetchall()
+        return [{"id": r[0], "symbol": r[1], "floor": r[2], "ceiling": r[3]} for r in rows]
+
+
+async def get_all_active_alerts() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT id, user_id, guild_id, symbol, floor, ceiling FROM alerts WHERE triggered = 0"
+        )
+        rows = await cursor.fetchall()
+        return [{"id": r[0], "user_id": r[1], "guild_id": r[2], "symbol": r[3], "floor": r[4], "ceiling": r[5]} for r in rows]
+
+
+async def mark_alert_triggered(alert_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE alerts SET triggered = 1 WHERE id = ?", (alert_id,))
+        await db.commit()
+
+
+async def remove_alert(alert_id: int, user_id: str) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "DELETE FROM alerts WHERE id = ? AND user_id = ?", (alert_id, user_id)
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+# --- Volatility Configs ---
+
+async def set_vol_config(guild_id: str, symbol: str, threshold_pct: float):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO vol_configs (guild_id, symbol, threshold_pct) VALUES (?, ?, ?) "
+            "ON CONFLICT(guild_id, symbol) DO UPDATE SET threshold_pct = excluded.threshold_pct",
+            (guild_id, symbol.upper(), threshold_pct),
+        )
+        await db.commit()
+
+
+async def get_vol_configs(guild_id: str) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT symbol, threshold_pct FROM vol_configs WHERE guild_id = ?", (guild_id,)
+        )
+        rows = await cursor.fetchall()
+        return [{"symbol": r[0], "threshold_pct": r[1]} for r in rows]
+
+
+# --- Scheduler Config ---
+
+async def set_scheduler_channel(guild_id: str, channel_id: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO scheduler_config (guild_id, channel_id) VALUES (?, ?) "
+            "ON CONFLICT(guild_id) DO UPDATE SET channel_id = excluded.channel_id",
+            (guild_id, channel_id),
+        )
+        await db.commit()
+
+
+async def get_scheduler_channel(guild_id: str) -> str | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT channel_id FROM scheduler_config WHERE guild_id = ?", (guild_id,)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
