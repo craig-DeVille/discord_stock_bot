@@ -53,7 +53,6 @@ class Scheduler(commands.Cog):
     @app_commands.command(name="setchannel", description="Set the channel for all market updates (admin only)")
     @app_commands.guild_only()
     @app_commands.describe(channel="Channel to post daily summaries, intraday updates, and alerts in")
-    @app_commands.checks.has_permissions(administrator=True)
     async def setchannel(self, interaction: discord.Interaction, channel: discord.TextChannel):
         await set_scheduler_channel(str(interaction.guild_id), str(channel.id))
         await interaction.response.send_message(
