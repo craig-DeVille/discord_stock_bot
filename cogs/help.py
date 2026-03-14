@@ -30,8 +30,7 @@ class Help(commands.Cog):
             value=(
                 "`/alert <symbol> [floor] [ceiling]` — Ping you in the channel when price breaks a range\n"
                 "`/alerts` — List your active alerts\n"
-                "`/alert_remove <id>` — Delete an alert\n"
-                "`/volconfig <symbol> <threshold%>` — Ping the channel when a symbol moves more than X% in a day"
+                "`/alert_remove <id>` — Delete an alert"
             ),
             inline=False,
         )

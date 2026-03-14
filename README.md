@@ -28,7 +28,6 @@ A Discord bot for tracking oil ETFs and energy funds in a server. Posts daily ma
 | `/alert <symbol> [floor] [ceiling]` | Ping the channel when price breaks a range (max 10 per user) |
 | `/alerts` | List your active alerts |
 | `/alert_remove <id>` | Delete an alert |
-| `/volconfig <symbol> <threshold%>` | Ping channel when symbol moves X%+ in a day (max 25) |
 
 ### Scheduled Updates
 | Command | Description |
@@ -78,7 +77,6 @@ python bot.py
 ### 4. First-time Discord setup
 1. Run `/setchannel #your-channel` in your server — this enables daily open/close posts
 2. Optionally run `/subscribe 1h` to add hourly intraday updates
-3. Run `/volconfig USO 5` to get pinged when USO moves 5%+ in a day
 
 ## Creating a Discord Bot
 
