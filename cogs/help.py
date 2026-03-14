@@ -19,7 +19,6 @@ class Help(commands.Cog):
             value=(
                 "`/price <symbol>` — Get current price for any ticker\n"
                 "`/watchlist` — Show all tracked symbols with prices\n"
-                "`/add <symbol>` — Add a symbol to the group watchlist\n"
                 "`/remove <symbol>` — Remove a symbol from the watchlist"
             ),
             inline=False,
@@ -54,7 +53,7 @@ class Help(commands.Cog):
 
         embed.add_field(
             name="📈 Default Watchlist",
-            value="`USO` · `UCO` · `BNO` · `XOP` · `XLE`",
+            value="`USO` · `UCO` · `BNO` · `XOP` · `XLE` · `BTC-USD`",
             inline=False,
         )
 

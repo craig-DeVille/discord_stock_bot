@@ -3,9 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from services.market import get_quote, get_quotes, format_change, embed_color
-from database.db import get_watchlist, add_to_watchlist, remove_from_watchlist, seed_default_watchlist, count_watchlist
-
-MAX_WATCHLIST = 25
+from database.db import get_watchlist, remove_from_watchlist, seed_default_watchlist
 from config import DEFAULT_WATCHLIST
 
 
@@ -53,7 +51,7 @@ class Prices(commands.Cog):
         symbols = await get_watchlist(guild_id)
 
         if not symbols:
-            await interaction.followup.send("Watchlist is empty. Use `/add <symbol>` to add something.")
+            await interaction.followup.send("Watchlist is empty.")
             return
 
         quotes = await get_quotes(symbols)
@@ -73,34 +71,6 @@ class Prices(commands.Cog):
         market_note = "" if any(q and q["market_hours"] for q in quotes.values() if q) else "\n*Market closed — showing last close prices.*"
         embed.set_footer(text=f"Not financial advice.{market_note}")
         await interaction.followup.send(embed=embed)
-
-    @app_commands.command(name="add", description="Add a symbol to the group watchlist")
-    @app_commands.guild_only()
-    @app_commands.describe(symbol="Ticker symbol to add, e.g. VOO")
-    async def add(self, interaction: discord.Interaction, symbol: app_commands.Range[str, 1, 10]):
-        await interaction.response.defer(ephemeral=True)
-        symbol = symbol.upper()
-        guild_id = str(interaction.guild_id)
-
-        count = await count_watchlist(guild_id)
-        if count >= MAX_WATCHLIST:
-            await interaction.followup.send(
-                f"Watchlist is full ({MAX_WATCHLIST} symbols max). Remove one first with `/remove`.",
-                ephemeral=True,
-            )
-            return
-
-        # Validate the symbol exists
-        data = await get_quote(symbol)
-        if not data:
-            await interaction.followup.send(f"Could not find **{symbol}** — double-check the ticker.", ephemeral=True)
-            return
-
-        added = await add_to_watchlist(guild_id, symbol, str(interaction.user.id))
-        if added:
-            await interaction.followup.send(f"Added **{symbol}** to the watchlist.", ephemeral=True)
-        else:
-            await interaction.followup.send(f"**{symbol}** is already on the watchlist.", ephemeral=True)
 
     @app_commands.command(name="remove", description="Remove a symbol from the group watchlist")
     @app_commands.guild_only()

@@ -13,7 +13,7 @@ ALLOWED_GUILDS = {
 }
 
 # Pre-loaded oil watchlist
-DEFAULT_WATCHLIST = ["USO", "UCO", "BNO", "XOP", "XLE"]
+DEFAULT_WATCHLIST = ["USO", "UCO", "BNO", "XOP", "XLE", "BTC-USD"]
 
 # Default volatility alert threshold (% move in a single day)
 DEFAULT_VOL_THRESHOLD = 5.0
