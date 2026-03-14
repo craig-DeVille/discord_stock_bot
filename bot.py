@@ -28,6 +28,10 @@ class OilBot(commands.Bot):
     async def on_ready(self):
         print(f"Logged in as {self.user} ({self.user.id})")
         for guild in self.guilds:
+            if guild.id not in ALLOWED_GUILDS:
+                print(f"Leaving unauthorized guild: {guild.name} ({guild.id})")
+                await guild.leave()
+                continue
             await self._sync_guild(guild)
         await self.change_presence(
             activity=discord.Activity(
