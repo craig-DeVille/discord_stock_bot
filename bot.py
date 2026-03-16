@@ -11,6 +11,7 @@ COGS = [
     "cogs.subscriptions",
     "cogs.scheduler",
     "cogs.help",
+    "cogs.scroll",
 ]
 
 
@@ -18,6 +19,7 @@ class OilBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.guilds = True
+        intents.message_content = True
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):

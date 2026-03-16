@@ -42,6 +42,15 @@ async def init_db():
                 intraday_interval_minutes INTEGER DEFAULT NULL,
                 last_intraday_post TEXT DEFAULT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS posted_links (
+                id INTEGER PRIMARY KEY,
+                channel_id TEXT NOT NULL,
+                url TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(channel_id, url)
+            );
         """)
         await db.commit()
 
@@ -244,6 +253,29 @@ async def update_last_intraday_post(guild_id: str, timestamp: str):
         await db.execute(
             "UPDATE scheduler_config SET last_intraday_post = ? WHERE guild_id = ?",
             (timestamp, guild_id),
+        )
+        await db.commit()
+
+
+# --- Posted Links (scroll/duplicate detection) ---
+
+async def check_link_exists(channel_id: str, url: str) -> str | None:
+    """Returns the original message_id if the URL was already posted in this channel, else None."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT message_id FROM posted_links WHERE channel_id = ? AND url = ?",
+            (channel_id, url),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
+async def record_link(channel_id: str, url: str, message_id: str):
+    """Record a newly posted link. Silently ignores duplicates."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO posted_links (channel_id, url, message_id) VALUES (?, ?, ?)",
+            (channel_id, url, message_id),
         )
         await db.commit()
 
